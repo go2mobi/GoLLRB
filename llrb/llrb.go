@@ -23,54 +23,14 @@ type LLRB struct {
 }
 
 type Node struct {
-	Item
+	Value       uint64
 	Left, Right *Node // Pointers to left and right child nodes
 	Black       bool  // If set, the color of the link (incoming from the parent) is black
 	// In the LLRB, new nodes are always red, hence the zero-value for node
 }
 
-type Item interface {
-	Less(than Item) bool
-}
-
-//
-func less(x, y Item) bool {
-	if x == pinf {
-		return false
-	}
-	if x == ninf {
-		return true
-	}
-	return x.Less(y)
-}
-
-// Inf returns an Item that is "bigger than" any other item, if sign is positive.
-// Otherwise  it returns an Item that is "smaller than" any other item.
-func Inf(sign int) Item {
-	if sign == 0 {
-		panic("sign")
-	}
-	if sign > 0 {
-		return pinf
-	}
-	return ninf
-}
-
-var (
-	ninf = nInf{}
-	pinf = pInf{}
-)
-
-type nInf struct{}
-
-func (nInf) Less(Item) bool {
-	return true
-}
-
-type pInf struct{}
-
-func (pInf) Less(Item) bool {
-	return false
+func less(x, y uint64) bool {
+	return x < y
 }
 
 // New() allocates a new tree
@@ -84,6 +44,10 @@ func (t *LLRB) SetRoot(r *Node) {
 	t.root = r
 }
 
+func (t *LLRB) SetLen(l int) {
+	t.count = l
+}
+
 // Root returns the root node of the tree.
 // It is intended to be used by functions that serialize the tree.
 func (t *LLRB) Root() *Node {
@@ -94,57 +58,58 @@ func (t *LLRB) Root() *Node {
 func (t *LLRB) Len() int { return t.count }
 
 // Has returns true if the tree contains an element whose order is the same as that of key.
-func (t *LLRB) Has(key Item) bool {
-	return t.Get(key) != nil
+func (t *LLRB) Has(key uint64) bool {
+	_, found := t.Get(key)
+	return found
 }
 
 // Get retrieves an element from the tree whose order is the same as that of key.
-func (t *LLRB) Get(key Item) Item {
+func (t *LLRB) Get(key uint64) (uint64, bool) {
 	h := t.root
 	for h != nil {
 		switch {
-		case less(key, h.Item):
+		case less(key, h.Value):
 			h = h.Left
-		case less(h.Item, key):
+		case less(h.Value, key):
 			h = h.Right
 		default:
-			return h.Item
+			return h.Value, true
 		}
 	}
-	return nil
+	return 0, false
 }
 
 // Min returns the minimum element in the tree.
-func (t *LLRB) Min() Item {
+func (t *LLRB) Min() uint64 {
 	h := t.root
 	if h == nil {
-		return nil
+		return 0
 	}
 	for h.Left != nil {
 		h = h.Left
 	}
-	return h.Item
+	return h.Value
 }
 
 // Max returns the maximum element in the tree.
-func (t *LLRB) Max() Item {
+func (t *LLRB) Max() uint64 {
 	h := t.root
 	if h == nil {
-		return nil
+		return 0
 	}
 	for h.Right != nil {
 		h = h.Right
 	}
-	return h.Item
+	return h.Value
 }
 
-func (t *LLRB) ReplaceOrInsertBulk(items ...Item) {
+func (t *LLRB) ReplaceOrInsertBulk(items ...uint64) {
 	for _, i := range items {
 		t.ReplaceOrInsert(i)
 	}
 }
 
-func (t *LLRB) InsertNoReplaceBulk(items ...Item) {
+func (t *LLRB) InsertNoReplaceBulk(items ...uint64) {
 	for _, i := range items {
 		t.InsertNoReplace(i)
 	}
@@ -152,33 +117,30 @@ func (t *LLRB) InsertNoReplaceBulk(items ...Item) {
 
 // ReplaceOrInsert inserts item into the tree. If an existing
 // element has the same order, it is removed from the tree and returned.
-func (t *LLRB) ReplaceOrInsert(item Item) Item {
-	if item == nil {
-		panic("inserting nil item")
-	}
-	var replaced Item
+func (t *LLRB) ReplaceOrInsert(item uint64) bool {
+	var replaced bool
 	t.root, replaced = t.replaceOrInsert(t.root, item)
 	t.root.Black = true
-	if replaced == nil {
+	if !replaced {
 		t.count++
 	}
 	return replaced
 }
 
-func (t *LLRB) replaceOrInsert(h *Node, item Item) (*Node, Item) {
+func (t *LLRB) replaceOrInsert(h *Node, item uint64) (*Node, bool) {
 	if h == nil {
-		return newNode(item), nil
+		return newNode(item), false
 	}
 
 	h = walkDownRot23(h)
 
-	var replaced Item
-	if less(item, h.Item) { // BUG
+	var replaced bool
+	if less(item, h.Value) { // BUG
 		h.Left, replaced = t.replaceOrInsert(h.Left, item)
-	} else if less(h.Item, item) {
+	} else if less(h.Value, item) {
 		h.Right, replaced = t.replaceOrInsert(h.Right, item)
 	} else {
-		replaced, h.Item = h.Item, item
+		replaced, h.Value = true, item
 	}
 
 	h = walkUpRot23(h)
@@ -188,23 +150,20 @@ func (t *LLRB) replaceOrInsert(h *Node, item Item) (*Node, Item) {
 
 // InsertNoReplace inserts item into the tree. If an existing
 // element has the same order, both elements remain in the tree.
-func (t *LLRB) InsertNoReplace(item Item) {
-	if item == nil {
-		panic("inserting nil item")
-	}
+func (t *LLRB) InsertNoReplace(item uint64) {
 	t.root = t.insertNoReplace(t.root, item)
 	t.root.Black = true
 	t.count++
 }
 
-func (t *LLRB) insertNoReplace(h *Node, item Item) *Node {
+func (t *LLRB) insertNoReplace(h *Node, item uint64) *Node {
 	if h == nil {
 		return newNode(item)
 	}
 
 	h = walkDownRot23(h)
 
-	if less(item, h.Item) {
+	if less(item, h.Value) {
 		h.Left = t.insertNoReplace(h.Left, item)
 	} else {
 		h.Right = t.insertNoReplace(h.Right, item)
@@ -257,92 +216,98 @@ func walkUpRot234(h *Node) *Node {
 
 // DeleteMin deletes the minimum element in the tree and returns the
 // deleted item or nil otherwise.
-func (t *LLRB) DeleteMin() Item {
-	var deleted Item
-	t.root, deleted = deleteMin(t.root)
+func (t *LLRB) DeleteMin() (uint64, bool) {
+	var deleted uint64
+	var wasDeleted bool
+	t.root, deleted, wasDeleted = deleteMin(t.root)
 	if t.root != nil {
 		t.root.Black = true
 	}
-	if deleted != nil {
+	if wasDeleted {
 		t.count--
 	}
-	return deleted
+	return deleted, wasDeleted
 }
 
 // deleteMin code for LLRB 2-3 trees
-func deleteMin(h *Node) (*Node, Item) {
+func deleteMin(h *Node) (*Node, uint64, bool) {
 	if h == nil {
-		return nil, nil
+		return nil, 0, false
 	}
 	if h.Left == nil {
-		return nil, h.Item
+		return nil, h.Value, true
 	}
 
 	if !isRed(h.Left) && !isRed(h.Left.Left) {
 		h = moveRedLeft(h)
 	}
 
-	var deleted Item
-	h.Left, deleted = deleteMin(h.Left)
+	var deleted uint64
+	var wasDeleted bool
+	h.Left, deleted, wasDeleted = deleteMin(h.Left)
 
-	return fixUp(h), deleted
+	return fixUp(h), deleted, wasDeleted
 }
 
 // DeleteMax deletes the maximum element in the tree and returns
 // the deleted item or nil otherwise
-func (t *LLRB) DeleteMax() Item {
-	var deleted Item
-	t.root, deleted = deleteMax(t.root)
+func (t *LLRB) DeleteMax() (uint64, bool) {
+	var deleted uint64
+	var wasDeleted bool
+	t.root, deleted, wasDeleted = deleteMax(t.root)
 	if t.root != nil {
 		t.root.Black = true
 	}
-	if deleted != nil {
+	if wasDeleted {
 		t.count--
 	}
-	return deleted
+	return deleted, wasDeleted
 }
 
-func deleteMax(h *Node) (*Node, Item) {
+func deleteMax(h *Node) (*Node, uint64, bool) {
 	if h == nil {
-		return nil, nil
+		return nil, 0, false
 	}
 	if isRed(h.Left) {
 		h = rotateRight(h)
 	}
 	if h.Right == nil {
-		return nil, h.Item
+		return nil, h.Value, true
 	}
 	if !isRed(h.Right) && !isRed(h.Right.Left) {
 		h = moveRedRight(h)
 	}
-	var deleted Item
-	h.Right, deleted = deleteMax(h.Right)
+	var deleted uint64
+	var wasDeleted bool
+	h.Right, deleted, wasDeleted = deleteMax(h.Right)
 
-	return fixUp(h), deleted
+	return fixUp(h), deleted, wasDeleted
 }
 
 // Delete deletes an item from the tree whose key equals key.
 // The deleted item is return, otherwise nil is returned.
-func (t *LLRB) Delete(key Item) Item {
-	var deleted Item
+func (t *LLRB) Delete(key uint64) bool {
+	var deleted bool
+
 	t.root, deleted = t.delete(t.root, key)
 	if t.root != nil {
 		t.root.Black = true
 	}
-	if deleted != nil {
+	if deleted {
 		t.count--
 	}
 	return deleted
 }
 
-func (t *LLRB) delete(h *Node, item Item) (*Node, Item) {
-	var deleted Item
+func (t *LLRB) delete(h *Node, item uint64) (*Node, bool) {
+	var deleted bool
+
 	if h == nil {
-		return nil, nil
+		return nil, false
 	}
-	if less(item, h.Item) {
+	if less(item, h.Value) {
 		if h.Left == nil { // item not present. Nothing to delete
-			return h, nil
+			return h, false
 		}
 		if !isRed(h.Left) && !isRed(h.Left.Left) {
 			h = moveRedLeft(h)
@@ -352,23 +317,21 @@ func (t *LLRB) delete(h *Node, item Item) (*Node, Item) {
 		if isRed(h.Left) {
 			h = rotateRight(h)
 		}
-		// If @item equals @h.Item and no right children at @h
-		if !less(h.Item, item) && h.Right == nil {
-			return nil, h.Item
+		// If @item equals @h.Value and no right children at @h
+		if !less(h.Value, item) && h.Right == nil {
+			return nil, true
 		}
 		// PETAR: Added 'h.Right != nil' below
 		if h.Right != nil && !isRed(h.Right) && !isRed(h.Right.Left) {
 			h = moveRedRight(h)
 		}
-		// If @item equals @h.Item, and (from above) 'h.Right != nil'
-		if !less(h.Item, item) {
-			var subDeleted Item
-			h.Right, subDeleted = deleteMin(h.Right)
-			if subDeleted == nil {
+		// If @item equals @h.Value, and (from above) 'h.Right != nil'
+		if !less(h.Value, item) {
+			h.Right, h.Value, deleted = deleteMin(h.Right)
+			if !deleted {
 				panic("logic")
 			}
-			deleted, h.Item = h.Item, subDeleted
-		} else { // Else, @item is bigger than @h.Item
+		} else { // Else, @item is bigger than @h.Value
 			h.Right, deleted = t.delete(h.Right, item)
 		}
 	}
@@ -378,7 +341,7 @@ func (t *LLRB) delete(h *Node, item Item) (*Node, Item) {
 
 // Internal node manipulation routines
 
-func newNode(item Item) *Node { return &Node{Item: item} }
+func newNode(item uint64) *Node { return &Node{Value: item} }
 
 func isRed(h *Node) bool {
 	if h == nil {

@@ -4,6 +4,7 @@
 
 package llrb
 
+/*
 type Int int
 
 func (x Int) Less(than Item) bool {
@@ -15,3 +16,4 @@ type String string
 func (x String) Less(than Item) bool {
 	return x < than.(String)
 }
+*/
